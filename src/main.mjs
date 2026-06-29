@@ -5,7 +5,7 @@ import {
   filterGyms,
   normalizeHyroxCnResponse,
   rankGyms,
-} from "./hyrox.mjs";
+} from "./hyrox.mjs?v=20260629-region-search";
 
 const form = document.querySelector("#search-form");
 const statusNode = document.querySelector("#status");
