@@ -16,6 +16,8 @@ const round = (value, decimals = 3) => {
 
 const cleanText = (value) => String(value ?? "").trim();
 
+const clampSize = (value) => Math.min(500, Math.max(1, Number.parseInt(value, 10) || 100));
+
 const splitImages = (value) =>
   cleanText(value)
     .split(",")
@@ -25,12 +27,16 @@ const splitImages = (value) =>
 export function buildHyroxCnUrl({ lat, lng, page = 1, size = 100 } = {}) {
   const url = new URL(HYROX_CN_API);
   url.searchParams.set("page", String(page));
-  url.searchParams.set("size", String(size));
+  url.searchParams.set("size", String(clampSize(size)));
 
   if (Number.isFinite(Number(lat))) url.searchParams.set("lat", String(lat));
   if (Number.isFinite(Number(lng))) url.searchParams.set("lng", String(lng));
 
   return url;
+}
+
+export function chooseHyroxCnFetchSize({ query = "", limit = 100 } = {}) {
+  return cleanText(query) ? 500 : clampSize(limit);
 }
 
 export function computeDistanceKm(from, to) {
@@ -88,8 +94,18 @@ export function filterGyms(gyms, query) {
   const needle = cleanText(query).toLowerCase();
   if (!needle) return [...gyms];
 
-  return gyms.filter((gym) => {
-    const haystack = [
+  const includesNeedle = (values) =>
+    values
+      .map(cleanText)
+      .join(" ")
+      .toLowerCase()
+      .includes(needle);
+
+  const regionMatches = gyms.filter((gym) => includesNeedle([gym.province, gym.city, gym.county]));
+  if (regionMatches.length > 0) return regionMatches;
+
+  return gyms.filter((gym) =>
+    includesNeedle([
       gym.name,
       gym.code,
       gym.province,
@@ -98,13 +114,8 @@ export function filterGyms(gyms, query) {
       gym.address,
       gym.status,
       gym.source,
-    ]
-      .map(cleanText)
-      .join(" ")
-      .toLowerCase();
-
-    return haystack.includes(needle);
-  });
+    ]),
+  );
 }
 
 export function rankGyms(gyms, origin) {

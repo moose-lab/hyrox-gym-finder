@@ -1,5 +1,6 @@
 import {
   buildHyroxCnUrl,
+  chooseHyroxCnFetchSize,
   createUserSearch,
   filterGyms,
   normalizeHyroxCnResponse,
@@ -71,7 +72,8 @@ const currentSearch = () =>
 async function fetchLiveGyms() {
   const origin = currentOrigin();
   const limit = clampLimit();
-  const url = buildHyroxCnUrl({ ...origin, page: 1, size: limit });
+  const size = chooseHyroxCnFetchSize({ query: fields.query.value, limit });
+  const url = buildHyroxCnUrl({ ...origin, page: 1, size });
   const response = await fetch(url, { mode: "cors", credentials: "omit" });
 
   if (!response.ok) {

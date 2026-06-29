@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildHyroxCnUrl,
+  chooseHyroxCnFetchSize,
   computeDistanceKm,
   createUserSearch,
   filterGyms,
@@ -90,6 +91,36 @@ test("filterGyms matches region, address, and gym name text", () => {
   assert.equal(filterGyms(gyms, "Shanghai").length, 1);
 });
 
+test("filterGyms prefers region matches over street-name matches", () => {
+  const gyms = [
+    {
+      id: "shanghai-street",
+      name: "Shanghai Studio",
+      province: "上海",
+      city: "上海市",
+      county: "静安区",
+      address: "上海市静安区北京西路511号",
+      status: "VALID",
+      source: "HYROXCN",
+    },
+    {
+      id: "beijing-city",
+      name: "Beijing Studio",
+      province: "北京",
+      city: "北京市",
+      county: "朝阳区",
+      address: "北京市朝阳区建外街道",
+      status: "VALID",
+      source: "HYROXCN",
+    },
+  ];
+
+  assert.deepEqual(
+    filterGyms(gyms, "北京").map((gym) => gym.id),
+    ["beijing-city"],
+  );
+});
+
 test("rankGyms computes distance when API distance is absent", () => {
   const gyms = [
     { id: "near", name: "Near", lat: 31.231, lng: 121.474, distanceKm: null },
@@ -121,6 +152,12 @@ test("buildHyroxCnUrl encodes live API search parameters", () => {
   assert.equal(url.searchParams.get("lng"), "121.4737");
   assert.equal(url.searchParams.get("page"), "2");
   assert.equal(url.searchParams.get("size"), "20");
+});
+
+test("chooseHyroxCnFetchSize loads the full list for text searches", () => {
+  assert.equal(chooseHyroxCnFetchSize({ query: "北京", limit: 20 }), 500);
+  assert.equal(chooseHyroxCnFetchSize({ query: "", limit: 20 }), 20);
+  assert.equal(chooseHyroxCnFetchSize({ query: "   ", limit: 999 }), 500);
 });
 
 test("createUserSearch links query context with result metadata", () => {
