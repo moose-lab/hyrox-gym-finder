@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HYROX Gym Finder</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23171915'/%3E%3Cpath d='M7 16h18M16 7v18' stroke='%23e0ff34' stroke-width='4'/%3E%3C/svg%3E" />
+    <meta
+      name="description"
+      content="Find nearby HYROXCN certified gyms from a location, region keyword, or local HYROXCN JSON export."
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="search-panel" aria-labelledby="app-title">
+        <div class="title-row">
+          <div>
+            <p class="eyebrow">HYROX Scenario Tool</p>
+            <h1 id="app-title">Find nearby HYROX gyms</h1>
+          </div>
+          <a class="source-link" href="https://hyroxcn.com/" target="_blank" rel="noreferrer">HYROXCN</a>
+        </div>
+
+        <form id="search-form" class="search-form">
+          <label>
+            <span>Region, address, or gym name</span>
+            <input id="query" name="query" type="search" value="上海" autocomplete="off" />
+          </label>
+
+          <div class="coordinate-grid">
+            <label>
+              <span>Latitude</span>
+              <input id="lat" name="lat" type="number" step="any" value="31.2304" />
+            </label>
+            <label>
+              <span>Longitude</span>
+              <input id="lng" name="lng" type="number" step="any" value="121.4737" />
+            </label>
+            <label>
+              <span>Result limit</span>
+              <input id="limit" name="limit" type="number" min="1" max="500" value="50" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit">Search live API</button>
+            <button id="use-location" type="button" class="secondary">Use my location</button>
+            <label class="file-button">
+              Import JSON
+              <input id="json-file" type="file" accept="application/json,.json" />
+            </label>
+          </div>
+        </form>
+
+        <p id="status" class="status" role="status">
+          Ready. Searches use the public HYROXCN gym endpoint or your imported JSON file.
+        </p>
+      </section>
+
+      <section class="dashboard" aria-label="Search results">
+        <div id="summary" class="summary-grid"></div>
+        <div class="visual-layout">
+          <section class="map-panel" aria-labelledby="map-title">
+            <div class="panel-heading">
+              <h2 id="map-title">Result map</h2>
+              <span id="source-pill" class="pill">No data loaded</span>
+            </div>
+            <div id="map" class="map-canvas" aria-live="polite"></div>
+          </section>
+
+          <section class="results-panel" aria-labelledby="results-title">
+            <div class="panel-heading">
+              <h2 id="results-title">Certified gyms</h2>
+              <span id="result-count" class="pill">0 results</span>
+            </div>
+            <div id="results" class="results-list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <template id="empty-template">
+      <div class="empty-state">
+        <h3>No gyms matched this search</h3>
+        <p>Try a broader city or province keyword, or search with latitude and longitude.</p>
+      </div>
+    </template>
+
+    <script type="module" src="./src/main.mjs"></script>
+  </body>
+</html>

@@ -1,0 +1,68 @@
+{
+  "success": true,
+  "code": "200",
+  "message": "redacted sample derived from the HYROXCN gym query response shape",
+  "time": "1782705402812",
+  "data": {
+    "totalElements": "3",
+    "content": [
+      {
+        "id": "1972662668746133505",
+        "name": "點苍综合体能",
+        "code": "53290001",
+        "coverImage": "https://files.hyroxcn.com/a/mendian/1/202509/DXgi0RYYO9_点苍 拷贝1(1).jpg",
+        "images": "https://files.hyroxcn.com/a/mendian/1/202509/DXgiTW1OLq_1d68802f291416aef570ed0028a5f67d.jpg",
+        "provinceName": "云南省",
+        "cityName": "大理白族自治州",
+        "countyName": "大理市",
+        "status": "VALID",
+        "address": "云南省大理白族自治州大理市太二村188号",
+        "lng": "100.226144",
+        "lat": "25.585580",
+        "distance": "0.0",
+        "fitnessTestAativity": { "activityId": "1", "cost": "0.00" }
+      },
+      {
+        "id": "2005917553583800321",
+        "name": "腾冲山清水秀运动管理中心",
+        "code": "53050002",
+        "coverImage": "https://files.hyroxcn.com/a/mendian/2004550539333873666/202512/G15nrts1sA_黑色背景logo山清水秀-hyrox.jpg",
+        "images": "https://files.hyroxcn.com/a/mendian/1/202512/FzzlNuLofJ_前台.jpg",
+        "provinceName": "云南省",
+        "cityName": "保山市",
+        "countyName": "腾冲市",
+        "status": "VALID",
+        "address": "云南省保山市腾冲市腾越路观音塘社区玉泉园小区2号千里走单骑主楼四层",
+        "lng": "98.493020",
+        "lat": "25.037310",
+        "distance": "184569.98111057465",
+        "fitnessTestAativity": { "activityId": "1", "cost": "0.00" },
+        "bookingAppId": "wx-redacted",
+        "bookingPath": "pages/auth/index?b=redacted"
+      },
+      {
+        "id": "2049039770001506306",
+        "name": "SOULFIT健身私教中心",
+        "code": "53010004",
+        "coverImage": "https://files.hyroxcn.com/a/mendian/1/202604/JBUpI7EGLi_67422c9e-6fbf-4833-bc90-024d2403995f.png",
+        "images": "https://files.hyroxcn.com/a/mendian/1/202604/JBUq0bZe8v_mmexport1777290766606.jpg",
+        "provinceName": "云南省",
+        "cityName": "昆明市",
+        "countyName": "盘龙区",
+        "status": "VALID",
+        "address": "云南省昆明市盘龙区北京路延长线尚都国际201-202",
+        "lng": "102.735783",
+        "lat": "25.085703",
+        "distance": "258264.92652659552",
+        "fitnessTestAativity": { "activityId": "1", "cost": "0.00" },
+        "bookingAppId": "wx-redacted",
+        "bookingPath": "/pages/introduce/index?boxId=redacted"
+      }
+    ],
+    "number": "1",
+    "size": "3",
+    "totalPages": "1",
+    "numberOfElements": "3"
+  },
+  "path": "/appapi/fit/gym/query"
+}
