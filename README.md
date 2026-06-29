@@ -2,6 +2,8 @@
 
 A small browser tool for finding nearby HYROXCN certified gyms from a location, region keyword, or local HYROXCN JSON export.
 
+Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
+
 ## What It Does
 
 - Calls the public HYROXCN gym endpoint: `https://api.hyroxcn.com/appapi/fit/gym/query`.
