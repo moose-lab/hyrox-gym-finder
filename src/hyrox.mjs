@@ -468,6 +468,13 @@ export function rankGyms(gyms, origin) {
     });
 }
 
+export function createNearbyGymMapView(gyms, { origin = {}, selectedId = "", limit = 20 } = {}) {
+  const results = rankGyms(gyms, origin).slice(0, clampSize(limit));
+  const selectedGym = results.find((gym) => cleanText(gym.id) === cleanText(selectedId)) ?? results[0] ?? null;
+
+  return { results, selectedGym };
+}
+
 export function findNearbyCertifiedGyms(
   gyms,
   { origin = {}, query = "", city = "", county = "", limit = 50 } = {},

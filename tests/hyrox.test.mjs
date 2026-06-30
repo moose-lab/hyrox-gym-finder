@@ -14,6 +14,7 @@ import {
   buildNominatimSearchUrl,
   chooseHyroxCnFetchSize,
   computeDistanceKm,
+  createNearbyGymMapView,
   createUserSearch,
   describeLocationSearchFailure,
   findNearbyCertifiedGyms,
@@ -447,6 +448,30 @@ test("findNearbyCertifiedGyms defaults to nearest GPS-ranked gyms when no text f
     ["jing-an", "xuhui"],
   );
   assert.ok(results[0].distanceKm < results[1].distanceKm);
+});
+
+test("createNearbyGymMapView sorts results by distance and keeps the selected gym", () => {
+  const view = createNearbyGymMapView(
+    [
+      { id: "far", name: "Far", distanceKm: 8, lat: 40.8, lng: -74.1 },
+      { id: "selected", name: "Selected", distanceKm: 3, lat: 40.74, lng: -74.02 },
+      { id: "near", name: "Near", distanceKm: 1, lat: 40.72, lng: -74.0 },
+    ],
+    {
+      origin: { lat: 40.7143387, lng: -73.9980744 },
+      selectedId: "selected",
+      limit: 3,
+    },
+  );
+
+  assert.deepEqual(
+    view.results.map((gym) => gym.id),
+    ["near", "selected", "far"],
+  );
+  assert.equal(view.selectedGym.id, "selected");
+
+  const fallbackView = createNearbyGymMapView(view.results, { selectedId: "missing" });
+  assert.equal(fallbackView.selectedGym.id, "near");
 });
 
 test("findNearbyCertifiedGyms applies city and county tag filters before ranking", () => {

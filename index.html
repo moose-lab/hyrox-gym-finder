@@ -13,7 +13,7 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="search-panel" aria-labelledby="app-title">
+      <section class="locator-bar" aria-labelledby="app-title">
         <div class="title-row">
           <div>
             <p class="eyebrow">HYROX Scenario Tool</p>
@@ -34,44 +34,9 @@
             />
           </label>
 
-          <section class="region-browser" aria-label="City and district filters">
-            <div class="region-heading">
-              <span>City tags</span>
-              <button id="clear-region" type="button" class="link-button" disabled>Clear</button>
-            </div>
-            <div id="city-tags" class="tag-list" aria-label="City filters"></div>
-            <div class="region-heading">
-              <span>District tags</span>
-            </div>
-            <div id="county-tags" class="tag-list" aria-label="District filters"></div>
-          </section>
-
-          <div class="coordinate-grid">
-            <label>
-              <span>Latitude</span>
-              <input id="lat" name="lat" type="number" step="any" placeholder="GPS fills this" />
-            </label>
-            <label>
-              <span>Longitude</span>
-              <input id="lng" name="lng" type="number" step="any" placeholder="GPS fills this" />
-            </label>
-            <label>
-              <span>Radius km</span>
-              <input id="radius" name="radius" type="number" min="1" max="500" step="1" value="50" />
-            </label>
-            <label>
-              <span>Result limit</span>
-              <input id="limit" name="limit" type="number" min="1" max="500" value="20" />
-            </label>
-          </div>
-
           <div class="actions">
             <button id="use-location" type="button">Use my GPS</button>
-            <button type="submit" class="secondary">Search live API</button>
-            <label class="file-button">
-              Import JSON
-              <input id="json-file" type="file" accept="application/json,.json" />
-            </label>
+            <button type="submit" class="secondary">Search nearby</button>
           </div>
         </form>
 
@@ -80,35 +45,31 @@
         </p>
       </section>
 
-      <section class="dashboard" aria-label="Search results">
-        <div id="summary" class="summary-grid"></div>
-        <div class="visual-layout">
-          <section class="map-panel" aria-labelledby="map-title">
-            <div class="panel-heading">
-              <h2 id="map-title">Result map</h2>
-              <span id="source-pill" class="pill">No data loaded</span>
-            </div>
-            <div id="map" class="map-canvas" aria-live="polite"></div>
-          </section>
+      <section class="finder-layout" aria-label="Nearest HYROX gyms">
+        <section class="map-panel" aria-labelledby="map-title">
+          <div class="panel-heading">
+            <h2 id="map-title">Nearby map</h2>
+          </div>
+          <div id="map" class="map-canvas" aria-live="polite"></div>
+        </section>
 
-          <section class="results-panel" aria-labelledby="results-title">
-            <div class="panel-heading">
-              <h2 id="results-title">Certified gyms</h2>
-              <span id="result-count" class="pill">0 results</span>
-            </div>
-            <div id="results" class="results-list"></div>
-          </section>
-        </div>
+        <section class="results-panel" aria-labelledby="results-title">
+          <div class="panel-heading">
+            <h2 id="results-title">Nearest gyms</h2>
+            <span id="result-count" class="pill">0 results</span>
+          </div>
+          <div id="results" class="results-list"></div>
+        </section>
       </section>
     </main>
 
     <template id="empty-template">
       <div class="empty-state">
         <h3>No gyms matched this search</h3>
-        <p>Allow GPS, enter a precise address or city, choose a city tag, or import a HYROXCN JSON export.</p>
+        <p>Allow GPS or enter a precise address to rank HYROX gyms by distance.</p>
       </div>
     </template>
 
-    <script type="module" src="./src/main.mjs?v=20260630-static-fallback"></script>
+    <script type="module" src="./src/main.mjs?v=20260630-map-results"></script>
   </body>
 </html>

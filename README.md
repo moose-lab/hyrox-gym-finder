@@ -1,6 +1,6 @@
 # HYROX Gym Finder
 
-A small browser tool for finding nearby HYROX certified gyms from your GPS position, a precise street address, city/district tags, coordinates, or a local HYROXCN JSON export.
+A small browser tool for finding nearby HYROX certified gyms from your GPS position or a precise street address.
 
 Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
 
@@ -9,12 +9,12 @@ Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
 - Resolves typed addresses and browser GPS coordinates through OpenStreetMap Nominatim.
 - Calls the official HYROX365 gym finder API through the local same-origin proxy: `https://api.prod.hyrox.fiit-tech.net/hyrox365/v1/gyms/map`.
 - Requests browser GPS by default, reverse-geocodes the precise place, and ranks certified gyms by nearest distance.
-- Accepts latitude/longitude, search radius, city and district tags, a precise address, city keyword, gym keyword, or an imported JSON export.
-- Normalizes certified `VALID` gyms into a compact result model.
+- Accepts a precise address, city keyword, gym keyword, or browser GPS location.
+- Normalizes HYROX365 gyms into a compact map/list result model.
 - Ranks gyms by API distance or local Haversine distance.
-- Builds city-level tags with second-level district filters from the loaded HYROXCN records.
-- Visualizes results with summary cards, a relative SVG map, and a ranked venue list.
-- Fetches public HYROX365 gym details for top nearby results and shows address, region, coordinates, certification status, gym code, phone, email, website, amenities, opening hours, official HYROX profile, source, and map links.
+- Renders only the core finder surface: a map and a distance-sorted nearby gym list.
+- Lets users click map markers or right-side list rows to inspect the selected gym directly on the map.
+- Fetches public HYROX365 gym details for top nearby results and shows address, city, coordinates, phone, email, website, and official HYROX profile links.
 - Detects static GitHub Pages deployments without an API proxy, avoids raw `/api/*` 404 HTML errors, and falls back to an official HYROX Finder link for the resolved address.
 - Redacts personal contact fields from included sample data.
 
@@ -35,7 +35,7 @@ The GitHub Pages build is static. It can resolve a typed address through a JSONP
 
 The global HYROX365 map API supports latitude, longitude, radius, and limit parameters and returns distance-sorted HYROX gym records. The app then fetches public detail records for the top nearby gyms and keeps only display-safe public fields.
 
-The HYROXCN fallback endpoint supports `page`, `size`, `lat`, and `lng` query parameters. A `size=500` request can retrieve the current China gym list in one response, while coordinates return distance-sorted nearby gyms. The response includes fields such as gym name, status, province, city, county, address, latitude, longitude, distance, image metadata, fitness-test metadata, and optional booking path.
+The HYROXCN parser and redacted sample remain in the repo for regression coverage, but the current frontend no longer renders the old import, city-tag, or coordinate-debug controls.
 
 Do not commit raw exports that include `contactPhone` or other direct personal contact details. Use the redacted sample in `sample/hyroxcn-redacted-sample.json` for demos and tests.
 
@@ -50,6 +50,4 @@ Keep changes small:
 
 Good first extensions:
 
-- Add a richer city-center preset list for text-only searches.
-- Add CSV export for selected gyms.
 - Add deployment support for a hosted same-origin proxy so the public GitHub Pages app can use HYROX365 global search outside local development.
