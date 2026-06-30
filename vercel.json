@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm test && npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/geocode/search",
+      "destination": "/api/proxy?path=geocode/search"
+    },
+    {
+      "source": "/api/geocode/reverse",
+      "destination": "/api/proxy?path=geocode/reverse"
+    },
+    {
+      "source": "/api/hyrox365/gyms/map",
+      "destination": "/api/proxy?path=hyrox365/gyms/map"
+    },
+    {
+      "source": "/api/hyrox365/gyms/:gymId",
+      "destination": "/api/proxy?path=hyrox365/gyms/:gymId"
+    }
+  ],
+  "functions": {
+    "api/**/*.mjs": {
+      "maxDuration": 30
+    }
+  }
+}

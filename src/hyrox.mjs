@@ -225,6 +225,13 @@ export function isStaticApiFallbackResponse({ status, contentType = "", body = "
   );
 }
 
+export function shouldUseGeocodeJsonpFallback(error) {
+  if (error?.staticApiUnavailable) return true;
+  const status = Number(error?.status);
+  const apiPath = cleanText(error?.apiPath);
+  return status >= 500 && apiPath.startsWith("/api/geocode/");
+}
+
 export function normalizeGeocodeFeature(feature) {
   if (!feature) return null;
 

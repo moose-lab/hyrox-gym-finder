@@ -25,6 +25,7 @@ import {
   normalizeHyrox365MapResponse,
   normalizeHyroxCnResponse,
   rankGyms,
+  shouldUseGeocodeJsonpFallback,
 } from "../src/hyrox.mjs";
 
 const apiPayload = {
@@ -340,6 +341,14 @@ test("isStaticApiFallbackResponse identifies GitHub Pages API 404 HTML", () => {
     }),
     false,
   );
+});
+
+test("shouldUseGeocodeJsonpFallback only falls back for static or failed geocode API calls", () => {
+  assert.equal(shouldUseGeocodeJsonpFallback({ staticApiUnavailable: true }), true);
+  assert.equal(shouldUseGeocodeJsonpFallback({ status: 502, apiPath: "/api/geocode/search" }), true);
+  assert.equal(shouldUseGeocodeJsonpFallback({ status: 502, apiPath: "/api/geocode/reverse" }), true);
+  assert.equal(shouldUseGeocodeJsonpFallback({ status: 502, apiPath: "/api/hyrox365/gyms/map" }), false);
+  assert.equal(shouldUseGeocodeJsonpFallback({ status: 404, apiPath: "/api/other" }), false);
 });
 
 test("normalizeHyrox365MapResponse maps the Doyers Street nearest gym with public details", () => {

@@ -8,6 +8,7 @@ import {
   mergeHyrox365GymDetails,
   normalizeGeocodeFeature,
   normalizeHyrox365MapResponse,
+  shouldUseGeocodeJsonpFallback,
 } from "./hyrox.mjs?v=20260630-map-results";
 
 const RADIUS_KM = 50;
@@ -125,7 +126,10 @@ async function fetchJson(url) {
     }
 
     const preview = contentType.includes("text/html") ? "HTML error page" : text.slice(0, 140);
-    throw new Error(`${url.pathname} returned ${response.status}${preview ? `: ${preview}` : ""}`);
+    const error = new Error(`${url.pathname} returned ${response.status}${preview ? `: ${preview}` : ""}`);
+    error.status = response.status;
+    error.apiPath = url.pathname;
+    throw error;
   }
 
   return text ? JSON.parse(text) : null;
@@ -186,8 +190,8 @@ async function geocodeQuery(query) {
     const feature = Array.isArray(payload) ? payload[0] : payload;
     return normalizeGeocodeFeature(feature);
   } catch (error) {
-    if (!isStaticApiUnavailableError(error)) throw error;
-    state.apiProxyUnavailable = true;
+    if (!shouldUseGeocodeJsonpFallback(error)) throw error;
+    if (error.staticApiUnavailable) state.apiProxyUnavailable = true;
     return geocodeQueryJsonp(query);
   }
 }
@@ -205,8 +209,8 @@ async function reverseGeocode(origin) {
   try {
     return normalizeGeocodeFeature(await fetchJson(url));
   } catch (error) {
-    if (!isStaticApiUnavailableError(error)) throw error;
-    state.apiProxyUnavailable = true;
+    if (!shouldUseGeocodeJsonpFallback(error)) throw error;
+    if (error.staticApiUnavailable) state.apiProxyUnavailable = true;
     return reverseGeocodeJsonp(origin);
   }
 }

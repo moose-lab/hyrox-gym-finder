@@ -2,7 +2,9 @@
 
 A small browser tool for finding nearby HYROX certified gyms from your GPS position or a precise street address.
 
-Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
+Live app: <https://hyrox-gym-finder.vercel.app/>
+
+Static fallback: <https://moose-lab.github.io/hyrox-gym-finder/>
 
 ## What It Does
 
@@ -15,6 +17,7 @@ Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
 - Renders only the core finder surface: a map and a distance-sorted nearby gym list.
 - Lets users click map markers or right-side list rows to inspect the selected gym directly on the map.
 - Fetches public HYROX365 gym details for top nearby results and shows address, city, coordinates, phone, email, website, and official HYROX profile links.
+- Uses Vercel Functions as a hosted same-origin proxy for full in-app HYROX365 map results.
 - Detects static GitHub Pages deployments without an API proxy, avoids raw `/api/*` 404 HTML errors, and falls back to an official HYROX Finder link for the resolved address.
 - Redacts personal contact fields from included sample data.
 
@@ -29,7 +32,7 @@ Open `http://localhost:4173`.
 
 The app has no package dependencies. `npm start` runs a small Node server that serves static files and exposes fixed proxy routes for Nominatim and HYROX365. The proxy uses the system `curl` binary for upstream requests and is needed because the official HYROX365 API allows the official HYROX finder origin but does not allow arbitrary static browser origins.
 
-The GitHub Pages build is static. It can resolve a typed address through a JSONP fallback and open the official HYROX Finder for that precise location, but full in-app HYROX365 result cards require `npm start` locally or a hosted same-origin proxy deployment.
+The Vercel deployment uses `api/proxy.mjs` as a hosted same-origin proxy, so the production app can render the full interactive HYROX365 map and right-side nearest-gym list. The GitHub Pages build is static. It can resolve a typed address through a JSONP fallback and open the official HYROX Finder for that precise location, but full in-app HYROX365 result cards require `npm start` locally or the Vercel deployment.
 
 ## Data Notes
 
@@ -48,6 +51,4 @@ Keep changes small:
 3. Run `npm test`.
 4. Check the browser at `http://localhost:4173`.
 
-Good first extensions:
-
-- Add deployment support for a hosted same-origin proxy so the public GitHub Pages app can use HYROX365 global search outside local development.
+Deployment changes should include `npm test`, `npm run build`, and a browser check against the Vercel URL.
