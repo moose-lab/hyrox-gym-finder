@@ -5,8 +5,11 @@ import {
   createUserSearch,
   describeLocationSearchFailure,
   findNearbyCertifiedGyms,
+  mergeHyrox365GymDetails,
+  normalizeGeocodeFeature,
+  normalizeHyrox365MapResponse,
   normalizeHyroxCnResponse,
-} from "./hyrox.mjs?v=20260630-nearby-default";
+} from "./hyrox.mjs?v=20260630-global-address";
 
 const form = document.querySelector("#search-form");
 const statusNode = document.querySelector("#status");
@@ -26,6 +29,7 @@ const fields = {
   query: document.querySelector("#query"),
   lat: document.querySelector("#lat"),
   lng: document.querySelector("#lng"),
+  radius: document.querySelector("#radius"),
   limit: document.querySelector("#limit"),
 };
 
@@ -35,6 +39,8 @@ const state = {
   regionOptions: [],
   selectedCity: "",
   selectedCounty: "",
+  place: null,
+  filterQuery: true,
   lastSearch: createUserSearch({ label: "GPS nearby" }),
   source: "Not loaded",
   total: 0,
@@ -59,6 +65,15 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+const safeExternalUrl = (value) => {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+};
+
 const formatDistance = (km) => {
   if (!Number.isFinite(km)) return "Distance unknown";
   if (km < 1) return `${Math.round(km * 1000)} m`;
@@ -70,7 +85,9 @@ const formatCoordinates = (gym) => {
   return `${gym.lat.toFixed(5)}, ${gym.lng.toFixed(5)}`;
 };
 
-const clampLimit = () => Math.min(500, Math.max(1, Number.parseInt(fields.limit.value, 10) || 50));
+const clampLimit = () => Math.min(500, Math.max(1, Number.parseInt(fields.limit.value, 10) || 20));
+
+const clampRadiusKm = () => Math.min(500, Math.max(1, Number.parseFloat(fields.radius.value) || 50));
 
 const currentOrigin = () => ({
   lat: numberOrNull(fields.lat.value),
@@ -84,17 +101,64 @@ const hasOrigin = () => {
 
 const activeQueryText = () => cleanText(fields.query.value);
 
+const currentLocationLabel = () => {
+  if (state.place?.shortLabel) return state.place.shortLabel;
+  if (state.place?.label) return state.place.label;
+  if (hasOrigin()) return "Current GPS position";
+  return "";
+};
+
 const currentSearch = () => {
-  const label = [hasOrigin() ? "GPS nearby" : "", state.selectedCity, state.selectedCounty, activeQueryText()]
-    .filter(Boolean)
-    .join(" / ");
+  const query = state.filterQuery ? activeQueryText() : "";
+  const label = [currentLocationLabel(), state.selectedCity, state.selectedCounty, query].filter(Boolean).join(" / ");
 
   return createUserSearch({
-    label: label || "HYROXCN search",
-    query: activeQueryText(),
+    label: label || "HYROX gym search",
+    query,
     ...currentOrigin(),
   });
 };
+
+const apiUrl = (path) => new URL(path, window.location.origin);
+
+async function fetchJson(url) {
+  const response = await fetch(url, { credentials: "same-origin" });
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`${url.pathname} returned ${response.status}${text ? `: ${text.slice(0, 140)}` : ""}`);
+  }
+
+  return text ? JSON.parse(text) : null;
+}
+
+async function geocodeQuery(query) {
+  const url = apiUrl("/api/geocode/search");
+  url.searchParams.set("q", query);
+  const payload = await fetchJson(url);
+  const feature = Array.isArray(payload) ? payload[0] : payload;
+  return normalizeGeocodeFeature(feature);
+}
+
+async function reverseGeocode(origin) {
+  const url = apiUrl("/api/geocode/reverse");
+  url.searchParams.set("lat", String(origin.lat));
+  url.searchParams.set("lng", String(origin.lng));
+  return normalizeGeocodeFeature(await fetchJson(url));
+}
+
+function applyPlace(place, { updateQuery = true } = {}) {
+  if (!place) return;
+
+  state.place = place;
+  state.filterQuery = false;
+  fields.lat.value = String(place.lat);
+  fields.lng.value = String(place.lng);
+
+  if (updateQuery) {
+    fields.query.value = place.shortLabel || place.label;
+  }
+}
 
 async function fetchLiveGyms() {
   const origin = currentOrigin();
@@ -113,10 +177,51 @@ async function fetchLiveGyms() {
   return { gyms, total: payload?.data?.totalElements ?? gyms.length };
 }
 
-function applySearch({ gyms = state.gyms, source = state.source, total = state.total || gyms.length } = {}) {
+async function fetchHyrox365Gyms() {
+  const origin = currentOrigin();
+  const radiusKm = clampRadiusKm();
+  const limit = clampLimit();
+  const url = apiUrl("/api/hyrox365/gyms/map");
+  url.searchParams.set("latitude", String(origin.lat));
+  url.searchParams.set("longitude", String(origin.lng));
+  url.searchParams.set("radiusMeters", String(Math.round(radiusKm * 1000)));
+  url.searchParams.set("limit", String(limit));
+
+  const payload = await fetchJson(url);
+  let gyms = normalizeHyrox365MapResponse(payload, {
+    origin,
+    label: currentLocationLabel() || activeQueryText() || "Current GPS position",
+    radiusKm,
+    limit,
+  });
+
+  const detailLimit = Math.min(gyms.length, limit, 10);
+  const detailedGyms = await Promise.all(
+    gyms.slice(0, detailLimit).map(async (gym) => {
+      try {
+        const detailPayload = await fetchJson(apiUrl(`/api/hyrox365/gyms/${encodeURIComponent(gym.id)}`));
+        return mergeHyrox365GymDetails(gym, detailPayload);
+      } catch {
+        return gym;
+      }
+    }),
+  );
+  const detailsById = new Map(detailedGyms.map((gym) => [gym.id, gym]));
+  gyms = gyms.map((gym) => detailsById.get(gym.id) ?? gym);
+
+  return { gyms, total: payload?.gyms?.length ?? gyms.length };
+}
+
+function applySearch({
+  gyms = state.gyms,
+  source = state.source,
+  total = state.total || gyms.length,
+  filterQuery = state.filterQuery,
+} = {}) {
   state.gyms = gyms;
   state.source = source;
   state.total = total;
+  state.filterQuery = filterQuery;
   state.regionOptions = buildRegionOptions(gyms);
   state.lastSearch = currentSearch();
   state.filtered = findNearbyCertifiedGyms(gyms, {
@@ -130,28 +235,57 @@ function applySearch({ gyms = state.gyms, source = state.source, total = state.t
   render(total);
 }
 
-async function searchLiveGyms({ statusPrefix = "Loading HYROXCN certified gyms" } = {}) {
-  setStatus(`${statusPrefix}...`, "neutral");
+async function searchLiveGyms({ statusPrefix = "Loading nearby HYROX gyms", allowGeocode = true } = {}) {
+  let globalFilterQuery = false;
+  const query = activeQueryText();
+
+  if (allowGeocode && query && state.filterQuery) {
+    setStatus(`Resolving "${query}" to a precise place...`, "neutral");
+    const place = await geocodeQuery(query);
+
+    if (place) {
+      state.selectedCity = "";
+      state.selectedCounty = "";
+      applyPlace(place);
+    } else {
+      globalFilterQuery = true;
+    }
+  }
+
+  if (hasOrigin()) {
+    const label = currentLocationLabel() || "your coordinates";
+    setStatus(`${statusPrefix} near ${label}...`, "neutral");
+
+    try {
+      const { gyms, total } = await fetchHyrox365Gyms();
+      applySearch({ gyms, source: "HYROX365 global API", total, filterQuery: globalFilterQuery });
+      setStatus(`Showing ${state.filtered.length} HYROX gyms within ${clampRadiusKm()} km of ${label}.`, "success");
+      return;
+    } catch (error) {
+      console.warn(error);
+      setStatus(`HYROX365 lookup failed. Trying HYROXCN fallback...`, "neutral");
+    }
+  }
 
   const { gyms, total } = await fetchLiveGyms();
-  applySearch({ gyms, source: "HYROXCN live API", total });
+  applySearch({ gyms, source: "HYROXCN live API", total, filterQuery: true });
 
-  const locationText = hasOrigin() ? "nearest to your current GPS position" : "from HYROXCN";
+  const locationText = hasOrigin() ? "nearest to your coordinates" : "from HYROXCN";
   setStatus(`Showing ${state.filtered.length} certified gyms ${locationText}.`, "success");
 }
 
 function render(total = state.total || state.gyms.length) {
   const nearest = state.filtered.find((gym) => Number.isFinite(gym.distanceKm));
   const cities = new Set(state.filtered.map((gym) => gym.city).filter(Boolean));
-  const withBooking = state.filtered.filter((gym) => gym.hasBooking).length;
-  const originLabel = hasOrigin() ? "GPS ready" : "No GPS";
+  const withContact = state.filtered.filter((gym) => gym.hasContact).length;
+  const originLabel = hasOrigin() ? currentLocationLabel() || "GPS ready" : "No GPS";
   const regionLabel = [state.selectedCity, state.selectedCounty].filter(Boolean).join(" / ") || "All cities";
 
   summaryNode.innerHTML = [
-    summaryCard("Origin", originLabel, hasOrigin() ? "distance ranking active" : "enter coordinates or allow GPS"),
-    summaryCard("Loaded", `${total}`, "HYROXCN certified records"),
+    summaryCard("Origin", originLabel, hasOrigin() ? "distance ranking active" : "enter an address or allow GPS"),
+    summaryCard("Loaded", `${total}`, state.source),
     summaryCard("Nearest", nearest ? formatDistance(nearest.distanceKm) : "None", nearest?.name ?? "No match"),
-    summaryCard("Filters", `${state.filtered.length}`, `${regionLabel} / ${cities.size} cities / ${withBooking} booking`),
+    summaryCard("Filters", `${state.filtered.length}`, `${regionLabel} / ${cities.size} cities / ${withContact} contacts`),
   ].join("");
 
   resultCountNode.textContent = `${state.filtered.length} results`;
@@ -174,7 +308,7 @@ function summaryCard(label, value, note) {
 
 function renderRegionTags() {
   if (state.regionOptions.length === 0) {
-    cityTagsNode.innerHTML = '<span class="tag-empty">Load HYROXCN data to choose city tags.</span>';
+    cityTagsNode.innerHTML = '<span class="tag-empty">Load live data to choose city tags.</span>';
     countyTagsNode.innerHTML = '<span class="tag-empty">Choose a city to reveal district tags.</span>';
     clearRegionButton.disabled = true;
     return;
@@ -232,7 +366,7 @@ function tagButton({ label, value, type, pressed }) {
 
 function renderMap() {
   if (state.filtered.length === 0) {
-    mapNode.innerHTML = '<div class="empty-map">Allow GPS or search a city to show nearby HYROX gyms.</div>';
+    mapNode.innerHTML = '<div class="empty-map">Allow GPS or search an address to show nearby HYROX gyms.</div>';
     return;
   }
 
@@ -274,11 +408,11 @@ function renderMap() {
     .join("");
 
   const originMarkup = originForBounds
-    ? `<circle cx="${project(originForBounds).x}" cy="${project(originForBounds).y}" r="9" class="origin-dot"><title>Your GPS position</title></circle>`
+    ? `<circle cx="${project(originForBounds).x}" cy="${project(originForBounds).y}" r="9" class="origin-dot"><title>Search origin</title></circle>`
     : "";
 
   mapNode.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative map of matched HYROX gyms and your GPS origin">
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative map of matched HYROX gyms and your search origin">
       <rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="0" class="map-bg"></rect>
       <path d="M ${pad} ${height / 2} H ${width - pad} M ${width / 2} ${pad} V ${height - pad}" class="map-grid"></path>
       ${circles}
@@ -302,6 +436,10 @@ function resultCard(gym, index) {
       ? `https://www.openstreetmap.org/?mlat=${gym.lat}&mlon=${gym.lng}#map=16/${gym.lat}/${gym.lng}`
       : "";
   const region = [gym.province, gym.city, gym.county].filter(Boolean).join(" / ") || "Region unavailable";
+  const websiteUrl = safeExternalUrl(gym.website);
+  const sourceUrl = safeExternalUrl(gym.sourceUrl);
+  const amenities = Array.isArray(gym.amenities) ? gym.amenities.slice(0, 6) : [];
+  const openingHours = Array.isArray(gym.openingHours) ? gym.openingHours.slice(0, 4) : [];
 
   return `
     <article class="result-card">
@@ -316,7 +454,7 @@ function resultCard(gym, index) {
         <dl class="detail-grid">
           <div>
             <dt>Certification</dt>
-            <dd>${escapeHtml(gym.status || "VALID")}</dd>
+            <dd>${escapeHtml(gym.certification || gym.status || "VALID")}</dd>
           </div>
           <div>
             <dt>Gym code</dt>
@@ -328,20 +466,44 @@ function resultCard(gym, index) {
           </div>
           <div>
             <dt>Source</dt>
-            <dd>${escapeHtml(gym.source || "HYROXCN")}</dd>
+            <dd>${escapeHtml(gym.source || "HYROX")}</dd>
           </div>
+          ${
+            gym.phone
+              ? `<div><dt>Phone</dt><dd>${escapeHtml(gym.phone)}</dd></div>`
+              : ""
+          }
+          ${
+            gym.email
+              ? `<div><dt>Email</dt><dd>${escapeHtml(gym.email)}</dd></div>`
+              : ""
+          }
         </dl>
         <div class="chips">
           <span>HYROX certified</span>
+          ${gym.htcx ? "<span>HTCX</span>" : ""}
           ${gym.hasFitnessTest ? "<span>Fitness test</span>" : ""}
           ${gym.hasBooking ? "<span>Booking path</span>" : ""}
+          ${gym.hasContact ? "<span>Contact listed</span>" : ""}
           ${gym.imageCount ? `<span>${gym.imageCount} images</span>` : ""}
+          ${amenities.map((amenity) => `<span>${escapeHtml(amenity)}</span>`).join("")}
         </div>
         ${
-          mapsUrl
-            ? `<a class="map-link" href="${mapsUrl}" target="_blank" rel="noreferrer">Open map</a>`
+          openingHours.length
+            ? `<div class="hours-list"><strong>Opening hours</strong>${openingHours
+                .map((entry) => `<span>${escapeHtml(entry)}</span>`)
+                .join("")}</div>`
             : ""
         }
+        <div class="result-links">
+          ${mapsUrl ? `<a class="map-link" href="${mapsUrl}" target="_blank" rel="noreferrer">Open map</a>` : ""}
+          ${websiteUrl ? `<a class="map-link" href="${escapeHtml(websiteUrl)}" target="_blank" rel="noreferrer">Website</a>` : ""}
+          ${
+            sourceUrl
+              ? `<a class="map-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">HYROX profile</a>`
+              : ""
+          }
+        </div>
       </div>
     </article>
   `;
@@ -371,9 +533,25 @@ async function locateAndSearch({ automatic = false } = {}) {
 
   fields.lat.value = position.coords.latitude.toFixed(6);
   fields.lng.value = position.coords.longitude.toFixed(6);
+  state.place = {
+    id: "browser-gps",
+    label: "Current GPS position",
+    shortLabel: "Current GPS position",
+    lat: numberOrNull(fields.lat.value),
+    lng: numberOrNull(fields.lng.value),
+    source: "Browser GPS",
+  };
+  state.filterQuery = false;
 
   try {
-    await searchLiveGyms({ statusPrefix: "GPS found. Loading nearest HYROXCN gyms" });
+    const precisePlace = await reverseGeocode(currentOrigin());
+    if (precisePlace) applyPlace(precisePlace);
+  } catch {
+    fields.query.value = state.place.shortLabel;
+  }
+
+  try {
+    await searchLiveGyms({ statusPrefix: "GPS found. Loading nearest HYROX gyms", allowGeocode: false });
   } catch (error) {
     setStatus(describeLocationSearchFailure(error, { automatic, stage: "api" }), "error");
   }
@@ -381,6 +559,7 @@ async function locateAndSearch({ automatic = false } = {}) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  state.filterQuery = Boolean(activeQueryText());
 
   try {
     await searchLiveGyms();
@@ -391,8 +570,10 @@ form.addEventListener("submit", async (event) => {
 });
 
 fields.query.addEventListener("input", () => {
+  state.filterQuery = true;
+  state.place = null;
   if (state.gyms.length === 0) return;
-  applySearch();
+  applySearch({ filterQuery: true });
 });
 
 cityTagsNode.addEventListener("click", (event) => {
@@ -429,8 +610,10 @@ fileInput.addEventListener("change", async () => {
     const gyms = normalizeHyroxCnResponse(payload);
     state.selectedCity = "";
     state.selectedCounty = "";
+    state.place = null;
+    state.filterQuery = true;
     fields.query.value = "";
-    applySearch({ gyms, source: "Imported JSON", total: payload?.data?.totalElements ?? gyms.length });
+    applySearch({ gyms, source: "Imported JSON", total: payload?.data?.totalElements ?? gyms.length, filterQuery: true });
     setStatus(`Imported ${gyms.length} valid gyms from ${file.name}.`, "success");
   } catch (error) {
     setStatus(`Could not import JSON: ${error.message}`, "error");

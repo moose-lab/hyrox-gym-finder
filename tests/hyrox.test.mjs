@@ -2,14 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildHyrox365GymDetailUrl,
+  buildHyrox365GymFinderUrl,
+  buildHyrox365MapUrl,
   buildHyroxCnUrl,
   buildRegionOptions,
+  buildNominatimReverseUrl,
+  buildNominatimSearchUrl,
   chooseHyroxCnFetchSize,
   computeDistanceKm,
   createUserSearch,
   describeLocationSearchFailure,
   findNearbyCertifiedGyms,
   filterGyms,
+  mergeHyrox365GymDetails,
+  normalizeGeocodeFeature,
+  normalizeHyrox365MapResponse,
   normalizeHyroxCnResponse,
   rankGyms,
 } from "../src/hyrox.mjs";
@@ -55,6 +63,89 @@ const apiPayload = {
     ],
   },
   path: "/appapi/fit/gym/query",
+};
+
+const hyrox365MapPayload = {
+  success: true,
+  message: "20 gyms retrieved",
+  center: { latitude: 40.71455, longitude: -73.99735 },
+  radiusMeters: 50000,
+  gyms: [
+    {
+      hyroxEntityId: "HGY_9J9dsQrNbJSpYoPvicHaSUQFl",
+      gymName: "OTF West Village - #1402",
+      htcx: false,
+      geoCoordinates: { lat: 40.7333238, lon: -74.0001278 },
+      address: {
+        country: "US",
+        postalCode: "10014",
+        city: "New York",
+        street: "391 6TH AVE",
+        state: "NY",
+        contactDetails: {
+          phone: "(646) 626-4412",
+          email: "studio1402@orangetheoryfitness.com",
+        },
+      },
+      bannerImage: null,
+      cardImage: null,
+      images: [],
+      distanceMeters: 2100.6348752447666,
+    },
+  ],
+};
+
+const hyrox365DetailPayload = {
+  success: true,
+  gym: {
+    hyroxEntityId: "HGY_9J9dsQrNbJSpYoPvicHaSUQFl",
+    gymName: "OTF West Village - #1402",
+    htcx: false,
+    socialMedia: {
+      website: "https://www.orangetheory.com/en-us/locations/new-york-new-york-1402",
+      instagram: "otfwestvillage",
+    },
+    address: {
+      country: "US",
+      postalCode: "10014",
+      city: "New York",
+      street: "391 6TH AVE",
+      state: "NY",
+      geoCoordinates: { lat: 40.7333238, lon: -74.0001278 },
+      contactDetails: {
+        phone: "(646) 626-4412",
+        email: "studio1402@orangetheoryfitness.com",
+      },
+    },
+    amenities: {
+      showers: true,
+      lockers: true,
+      wifi: false,
+    },
+    openingHours: {
+      monday: ["05:00-20:00"],
+      tuesday: ["05:00-20:00"],
+    },
+    images: [{ url: "https://example.com/public-gym.jpg" }],
+    signedTCPDF: { pdfDraft: "private contract content" },
+    chargebeeSubscriptionData: { status: "active" },
+  },
+};
+
+const doyersGeocodeFeature = {
+  place_id: 330780652,
+  lat: "40.7145498",
+  lon: "-73.9973438",
+  display_name: "5, Doyers Street, Chinatown, Manhattan, New York County, City of New York, New York, 10013, United States",
+  address: {
+    house_number: "5",
+    road: "Doyers Street",
+    neighbourhood: "Chinatown",
+    city: "City of New York",
+    state: "New York",
+    postcode: "10013",
+    country: "United States",
+  },
 };
 
 test("normalizeHyroxCnResponse keeps valid gyms and redacts personal contact fields", () => {
@@ -134,6 +225,111 @@ test("rankGyms computes distance when API distance is absent", () => {
   assert.equal(ranked[0].id, "near");
   assert.ok(ranked[0].distanceKm < 1);
   assert.ok(ranked[1].distanceKm > 1000);
+});
+
+test("buildNominatimSearchUrl encodes a precise street address", () => {
+  const url = buildNominatimSearchUrl("5 Doyers St, New York, NY 10013, United States");
+
+  assert.equal(url.origin, "https://nominatim.openstreetmap.org");
+  assert.equal(url.pathname, "/search");
+  assert.equal(url.searchParams.get("format"), "jsonv2");
+  assert.equal(url.searchParams.get("addressdetails"), "1");
+  assert.equal(url.searchParams.get("limit"), "1");
+  assert.equal(url.searchParams.get("q"), "5 Doyers St, New York, NY 10013, United States");
+});
+
+test("buildNominatimReverseUrl encodes exact GPS coordinates", () => {
+  const url = buildNominatimReverseUrl({ lat: 40.7145498, lng: -73.9973438 });
+
+  assert.equal(url.origin, "https://nominatim.openstreetmap.org");
+  assert.equal(url.pathname, "/reverse");
+  assert.equal(url.searchParams.get("lat"), "40.7145498");
+  assert.equal(url.searchParams.get("lon"), "-73.9973438");
+  assert.equal(url.searchParams.get("addressdetails"), "1");
+});
+
+test("normalizeGeocodeFeature keeps precise place label and coordinates", () => {
+  const place = normalizeGeocodeFeature(doyersGeocodeFeature);
+
+  assert.deepEqual(place, {
+    id: "osm-330780652",
+    label: "5, Doyers Street, Chinatown, Manhattan, New York County, City of New York, New York, 10013, United States",
+    shortLabel: "5 Doyers Street, City of New York, New York 10013",
+    lat: 40.7145498,
+    lng: -73.9973438,
+    source: "OpenStreetMap Nominatim",
+  });
+});
+
+test("buildHyrox365MapUrl targets the official global gym finder API", () => {
+  const url = buildHyrox365MapUrl({ lat: 40.71455, lng: -73.99735, radiusKm: 50, limit: 20 });
+
+  assert.equal(url.origin, "https://api.prod.hyrox.fiit-tech.net");
+  assert.equal(url.pathname, "/hyrox365/v1/gyms/map");
+  assert.equal(url.searchParams.get("latitude"), "40.71455");
+  assert.equal(url.searchParams.get("longitude"), "-73.99735");
+  assert.equal(url.searchParams.get("radiusMeters"), "50000");
+  assert.equal(url.searchParams.get("limit"), "20");
+});
+
+test("normalizeHyrox365MapResponse maps the Doyers Street nearest gym with public details", () => {
+  const gyms = normalizeHyrox365MapResponse(hyrox365MapPayload, {
+    origin: { lat: 40.7145498, lng: -73.9973438 },
+    label: "5 Doyers St",
+    radiusKm: 50,
+    limit: 20,
+  });
+
+  assert.equal(gyms.length, 1);
+  assert.deepEqual(gyms[0], {
+    id: "HGY_9J9dsQrNbJSpYoPvicHaSUQFl",
+    name: "OTF West Village - #1402",
+    code: "HGY_9J9dsQrNbJSpYoPvicHaSUQFl",
+    status: "VALID",
+    certification: "HYROX Training Club",
+    province: "NY",
+    city: "New York",
+    county: "",
+    address: "391 6TH AVE, 10014, New York, NY, US",
+    lat: 40.7333238,
+    lng: -74.0001278,
+    distanceMeters: 2100.6348752447666,
+    distanceKm: 2.101,
+    coverImage: "",
+    imageCount: 0,
+    hasFitnessTest: false,
+    hasBooking: false,
+    hasContact: true,
+    phone: "(646) 626-4412",
+    email: "studio1402@orangetheoryfitness.com",
+    website: "",
+    htcx: false,
+    amenities: [],
+    openingHours: [],
+    source: "HYROX365 global API",
+    sourceUrl:
+      "https://hyrox-training-finder.hyrox.com/gyms/new-york/otf-west-village-1402-HGY_9J9dsQrNbJSpYoPvicHaSUQFl?lat=40.7145498&lng=-73.9973438&label=5+Doyers+St&radiusKm=50&limit=20&resultRank=1",
+  });
+});
+
+test("mergeHyrox365GymDetails adds public profile fields without leaking internal contract data", () => {
+  const [gym] = normalizeHyrox365MapResponse(hyrox365MapPayload);
+  const detailed = mergeHyrox365GymDetails(gym, hyrox365DetailPayload);
+
+  assert.equal(detailed.website, "https://www.orangetheory.com/en-us/locations/new-york-new-york-1402");
+  assert.deepEqual(detailed.amenities, ["Showers", "Lockers"]);
+  assert.deepEqual(detailed.openingHours, ["Monday: 05:00-20:00", "Tuesday: 05:00-20:00"]);
+  assert.equal(detailed.imageCount, 1);
+  assert.equal(detailed.coverImage, "https://example.com/public-gym.jpg");
+  assert.equal("signedTCPDF" in detailed, false);
+  assert.equal("chargebeeSubscriptionData" in detailed, false);
+});
+
+test("buildHyrox365GymDetailUrl targets one official gym record", () => {
+  const url = buildHyrox365GymDetailUrl("HGY_9J9dsQrNbJSpYoPvicHaSUQFl");
+
+  assert.equal(url.origin, "https://api.prod.hyrox.fiit-tech.net");
+  assert.equal(url.pathname, "/hyrox365/v1/gyms/HGY_9J9dsQrNbJSpYoPvicHaSUQFl");
 });
 
 test("buildRegionOptions groups city tags with second-level county tags", () => {

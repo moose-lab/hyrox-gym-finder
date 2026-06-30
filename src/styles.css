@@ -175,7 +175,7 @@ a:focus-visible {
 
 .coordinate-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -276,6 +276,7 @@ a:focus-visible {
 .summary-card strong {
   font-size: clamp(1.45rem, 3vw, 2.4rem);
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .visual-layout {
@@ -445,11 +446,33 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.result-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .map-link {
   width: max-content;
   min-height: 34px;
   padding: 0 10px;
   font-size: 0.82rem;
+}
+
+.hours-list {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  background: #fbfcf8;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.hours-list strong {
+  color: var(--ink);
+  font-size: 0.72rem;
+  text-transform: uppercase;
 }
 
 @media (max-width: 860px) {
@@ -489,6 +512,8 @@ a:focus-visible {
 
   .actions button,
   .actions .file-button,
+  .result-links,
+  .result-links .map-link,
   .detail-grid {
     width: 100%;
   }
