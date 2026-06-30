@@ -1,15 +1,19 @@
 import {
+  buildHyrox365GymFinderSearchUrl,
   buildHyroxCnUrl,
   buildRegionOptions,
+  buildNominatimReverseJsonpUrl,
+  buildNominatimSearchJsonpUrl,
   chooseHyroxCnFetchSize,
   createUserSearch,
   describeLocationSearchFailure,
   findNearbyCertifiedGyms,
+  isStaticApiFallbackResponse,
   mergeHyrox365GymDetails,
   normalizeGeocodeFeature,
   normalizeHyrox365MapResponse,
   normalizeHyroxCnResponse,
-} from "./hyrox.mjs?v=20260630-global-address";
+} from "./hyrox.mjs?v=20260630-static-fallback";
 
 const form = document.querySelector("#search-form");
 const statusNode = document.querySelector("#status");
@@ -41,6 +45,9 @@ const state = {
   selectedCounty: "",
   place: null,
   filterQuery: true,
+  apiProxyUnavailable: false,
+  staticFallbackUrl: "",
+  staticFallbackLabel: "",
   lastSearch: createUserSearch({ label: "GPS nearby" }),
   source: "Not loaded",
   total: 0,
@@ -101,6 +108,22 @@ const hasOrigin = () => {
 
 const activeQueryText = () => cleanText(fields.query.value);
 
+const isStaticApiUnavailableError = (error) => Boolean(error?.staticApiUnavailable);
+
+const createStaticApiUnavailableError = () => {
+  const error = new Error(
+    "This static deployment does not include the HYROX365 API proxy required for in-app results.",
+  );
+  error.name = "StaticApiUnavailableError";
+  error.staticApiUnavailable = true;
+  return error;
+};
+
+const clearStaticFallback = () => {
+  state.staticFallbackUrl = "";
+  state.staticFallbackLabel = "";
+};
+
 const currentLocationLabel = () => {
   if (state.place?.shortLabel) return state.place.shortLabel;
   if (state.place?.label) return state.place.label;
@@ -121,30 +144,104 @@ const currentSearch = () => {
 
 const apiUrl = (path) => new URL(path, window.location.origin);
 
+const isStaticPagesDeployment = () =>
+  window.location.hostname.endsWith("github.io") || window.location.protocol === "file:";
+
 async function fetchJson(url) {
   const response = await fetch(url, { credentials: "same-origin" });
   const text = await response.text();
+  const contentType = response.headers.get("content-type") || "";
 
   if (!response.ok) {
-    throw new Error(`${url.pathname} returned ${response.status}${text ? `: ${text.slice(0, 140)}` : ""}`);
+    if (isStaticApiFallbackResponse({ status: response.status, contentType, body: text })) {
+      throw createStaticApiUnavailableError();
+    }
+
+    const preview = contentType.includes("text/html") ? "HTML error page" : text.slice(0, 140);
+    throw new Error(`${url.pathname} returned ${response.status}${preview ? `: ${preview}` : ""}`);
   }
 
   return text ? JSON.parse(text) : null;
 }
 
-async function geocodeQuery(query) {
-  const url = apiUrl("/api/geocode/search");
-  url.searchParams.set("q", query);
-  const payload = await fetchJson(url);
+function loadJsonp(url, callbackName) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Address lookup timed out"));
+    }, 12000);
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    };
+
+    window[callbackName] = (payload) => {
+      cleanup();
+      resolve(payload);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Address lookup failed"));
+    };
+    script.src = url.href;
+    document.head.append(script);
+  });
+}
+
+async function geocodeQueryJsonp(query) {
+  const callback = `hyroxGeocodeCallback_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const payload = await loadJsonp(buildNominatimSearchJsonpUrl(query, { callback }), callback);
   const feature = Array.isArray(payload) ? payload[0] : payload;
   return normalizeGeocodeFeature(feature);
 }
 
+async function reverseGeocodeJsonp(origin) {
+  const callback = `hyroxReverseCallback_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const payload = await loadJsonp(buildNominatimReverseJsonpUrl({ ...origin, callback }), callback);
+  return normalizeGeocodeFeature(payload);
+}
+
+async function geocodeQuery(query) {
+  if (isStaticPagesDeployment()) {
+    state.apiProxyUnavailable = true;
+    return geocodeQueryJsonp(query);
+  }
+
+  const url = apiUrl("/api/geocode/search");
+  url.searchParams.set("q", query);
+
+  try {
+    const payload = await fetchJson(url);
+    const feature = Array.isArray(payload) ? payload[0] : payload;
+    return normalizeGeocodeFeature(feature);
+  } catch (error) {
+    if (!isStaticApiUnavailableError(error)) throw error;
+    state.apiProxyUnavailable = true;
+    return geocodeQueryJsonp(query);
+  }
+}
+
 async function reverseGeocode(origin) {
+  if (isStaticPagesDeployment()) {
+    state.apiProxyUnavailable = true;
+    return reverseGeocodeJsonp(origin);
+  }
+
   const url = apiUrl("/api/geocode/reverse");
   url.searchParams.set("lat", String(origin.lat));
   url.searchParams.set("lng", String(origin.lng));
-  return normalizeGeocodeFeature(await fetchJson(url));
+
+  try {
+    return normalizeGeocodeFeature(await fetchJson(url));
+  } catch (error) {
+    if (!isStaticApiUnavailableError(error)) throw error;
+    state.apiProxyUnavailable = true;
+    return reverseGeocodeJsonp(origin);
+  }
 }
 
 function applyPlace(place, { updateQuery = true } = {}) {
@@ -212,6 +309,25 @@ async function fetchHyrox365Gyms() {
   return { gyms, total: payload?.gyms?.length ?? gyms.length };
 }
 
+function showStaticProxyFallback() {
+  const label = currentLocationLabel() || activeQueryText() || "this location";
+  const origin = currentOrigin();
+  state.staticFallbackLabel = label;
+  state.staticFallbackUrl = hasOrigin()
+    ? buildHyrox365GymFinderSearchUrl({
+        origin,
+        label,
+        radiusKm: clampRadiusKm(),
+        limit: clampLimit(),
+      }).href
+    : "";
+  applySearch({ gyms: [], source: "Static page needs API proxy", total: 0, filterQuery: false });
+  setStatus(
+    "This GitHub Pages build is static, so in-app HYROX365 results need a hosted API proxy. Use the official HYROX Finder link below for live nearby results, or run npm start locally for full detail cards.",
+    "error",
+  );
+}
+
 function applySearch({
   gyms = state.gyms,
   source = state.source,
@@ -236,6 +352,9 @@ function applySearch({
 }
 
 async function searchLiveGyms({ statusPrefix = "Loading nearby HYROX gyms", allowGeocode = true } = {}) {
+  clearStaticFallback();
+  if (isStaticPagesDeployment()) state.apiProxyUnavailable = true;
+
   let globalFilterQuery = false;
   const query = activeQueryText();
 
@@ -256,12 +375,23 @@ async function searchLiveGyms({ statusPrefix = "Loading nearby HYROX gyms", allo
     const label = currentLocationLabel() || "your coordinates";
     setStatus(`${statusPrefix} near ${label}...`, "neutral");
 
+    if (state.apiProxyUnavailable) {
+      showStaticProxyFallback();
+      return;
+    }
+
     try {
       const { gyms, total } = await fetchHyrox365Gyms();
       applySearch({ gyms, source: "HYROX365 global API", total, filterQuery: globalFilterQuery });
       setStatus(`Showing ${state.filtered.length} HYROX gyms within ${clampRadiusKm()} km of ${label}.`, "success");
       return;
     } catch (error) {
+      if (isStaticApiUnavailableError(error)) {
+        state.apiProxyUnavailable = true;
+        showStaticProxyFallback();
+        return;
+      }
+
       console.warn(error);
       setStatus(`HYROX365 lookup failed. Trying HYROXCN fallback...`, "neutral");
     }
@@ -422,12 +552,32 @@ function renderMap() {
 }
 
 function renderResults() {
+  if (state.staticFallbackUrl) {
+    resultsNode.innerHTML = staticFallbackCard();
+    return;
+  }
+
   if (state.filtered.length === 0) {
     resultsNode.replaceChildren(emptyTemplate.content.cloneNode(true));
     return;
   }
 
   resultsNode.innerHTML = state.filtered.map(resultCard).join("");
+}
+
+function staticFallbackCard() {
+  return `
+    <article class="static-fallback-card">
+      <h3>Open official HYROX results</h3>
+      <p>
+        The precise place was resolved as ${escapeHtml(state.staticFallbackLabel || "your search origin")}.
+        GitHub Pages cannot run the HYROX365 proxy, so full in-app gym cards require the local server or a hosted proxy deployment.
+      </p>
+      <a class="map-link" href="${escapeHtml(state.staticFallbackUrl)}" target="_blank" rel="noreferrer">
+        Open HYROX Finder
+      </a>
+    </article>
+  `;
 }
 
 function resultCard(gym, index) {
@@ -572,6 +722,7 @@ form.addEventListener("submit", async (event) => {
 fields.query.addEventListener("input", () => {
   state.filterQuery = true;
   state.place = null;
+  clearStaticFallback();
   if (state.gyms.length === 0) return;
   applySearch({ filterQuery: true });
 });
@@ -612,6 +763,8 @@ fileInput.addEventListener("change", async () => {
     state.selectedCounty = "";
     state.place = null;
     state.filterQuery = true;
+    state.apiProxyUnavailable = false;
+    clearStaticFallback();
     fields.query.value = "";
     applySearch({ gyms, source: "Imported JSON", total: payload?.data?.totalElements ?? gyms.length, filterQuery: true });
     setStatus(`Imported ${gyms.length} valid gyms from ${file.name}.`, "success");

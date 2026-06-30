@@ -4,10 +4,13 @@ import test from "node:test";
 import {
   buildHyrox365GymDetailUrl,
   buildHyrox365GymFinderUrl,
+  buildHyrox365GymFinderSearchUrl,
   buildHyrox365MapUrl,
   buildHyroxCnUrl,
   buildRegionOptions,
+  buildNominatimReverseJsonpUrl,
   buildNominatimReverseUrl,
+  buildNominatimSearchJsonpUrl,
   buildNominatimSearchUrl,
   chooseHyroxCnFetchSize,
   computeDistanceKm,
@@ -15,6 +18,7 @@ import {
   describeLocationSearchFailure,
   findNearbyCertifiedGyms,
   filterGyms,
+  isStaticApiFallbackResponse,
   mergeHyrox365GymDetails,
   normalizeGeocodeFeature,
   normalizeHyrox365MapResponse,
@@ -238,6 +242,19 @@ test("buildNominatimSearchUrl encodes a precise street address", () => {
   assert.equal(url.searchParams.get("q"), "5 Doyers St, New York, NY 10013, United States");
 });
 
+test("buildNominatimSearchJsonpUrl encodes a static-page geocoding fallback", () => {
+  const url = buildNominatimSearchJsonpUrl("5 Doyers St, New York, NY 10013, United States", {
+    callback: "hyroxGeocodeCallback_1",
+  });
+
+  assert.equal(url.origin, "https://nominatim.openstreetmap.org");
+  assert.equal(url.pathname, "/search");
+  assert.equal(url.searchParams.get("format"), "json");
+  assert.equal(url.searchParams.get("json_callback"), "hyroxGeocodeCallback_1");
+  assert.equal(url.searchParams.get("addressdetails"), "1");
+  assert.equal(url.searchParams.get("limit"), "1");
+});
+
 test("buildNominatimReverseUrl encodes exact GPS coordinates", () => {
   const url = buildNominatimReverseUrl({ lat: 40.7145498, lng: -73.9973438 });
 
@@ -246,6 +263,21 @@ test("buildNominatimReverseUrl encodes exact GPS coordinates", () => {
   assert.equal(url.searchParams.get("lat"), "40.7145498");
   assert.equal(url.searchParams.get("lon"), "-73.9973438");
   assert.equal(url.searchParams.get("addressdetails"), "1");
+});
+
+test("buildNominatimReverseJsonpUrl encodes a static-page GPS reverse-geocoding fallback", () => {
+  const url = buildNominatimReverseJsonpUrl({
+    lat: 40.7145498,
+    lng: -73.9973438,
+    callback: "hyroxReverseCallback",
+  });
+
+  assert.equal(url.origin, "https://nominatim.openstreetmap.org");
+  assert.equal(url.pathname, "/reverse");
+  assert.equal(url.searchParams.get("format"), "json");
+  assert.equal(url.searchParams.get("json_callback"), "hyroxReverseCallback");
+  assert.equal(url.searchParams.get("lat"), "40.7145498");
+  assert.equal(url.searchParams.get("lon"), "-73.9973438");
 });
 
 test("normalizeGeocodeFeature keeps precise place label and coordinates", () => {
@@ -270,6 +302,43 @@ test("buildHyrox365MapUrl targets the official global gym finder API", () => {
   assert.equal(url.searchParams.get("longitude"), "-73.99735");
   assert.equal(url.searchParams.get("radiusMeters"), "50000");
   assert.equal(url.searchParams.get("limit"), "20");
+});
+
+test("buildHyrox365GymFinderSearchUrl creates an official finder fallback for static hosts", () => {
+  const url = buildHyrox365GymFinderSearchUrl({
+    origin: { lat: 40.7143387, lng: -73.9980744 },
+    label: "5 Doyers Street, New York, New York 10013",
+    radiusKm: 50,
+    limit: 20,
+  });
+
+  assert.equal(url.origin, "https://hyrox-training-finder.hyrox.com");
+  assert.equal(url.pathname, "/gyms");
+  assert.equal(url.searchParams.get("lat"), "40.7143387");
+  assert.equal(url.searchParams.get("lng"), "-73.9980744");
+  assert.equal(url.searchParams.get("label"), "5 Doyers Street, New York, New York 10013");
+  assert.equal(url.searchParams.get("radiusKm"), "50");
+  assert.equal(url.searchParams.get("limit"), "20");
+});
+
+test("isStaticApiFallbackResponse identifies GitHub Pages API 404 HTML", () => {
+  assert.equal(
+    isStaticApiFallbackResponse({
+      status: 404,
+      contentType: "text/html; charset=utf-8",
+      body: "<!DOCTYPE html><title>Page not found · GitHub Pages</title>",
+    }),
+    true,
+  );
+
+  assert.equal(
+    isStaticApiFallbackResponse({
+      status: 500,
+      contentType: "application/json",
+      body: '{"error":"upstream failed"}',
+    }),
+    false,
+  );
 });
 
 test("normalizeHyrox365MapResponse maps the Doyers Street nearest gym with public details", () => {

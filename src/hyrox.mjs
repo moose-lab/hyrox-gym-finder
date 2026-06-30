@@ -46,6 +46,11 @@ const slugify = (value, fallback = "hyrox-gym") => {
   return slug || fallback;
 };
 
+const sanitizeJsonpCallback = (value) => {
+  const callback = cleanText(value).replace(/[^\w$.]/g, "");
+  return callback || "hyroxGeocodeCallback";
+};
+
 const imageUrl = (image) => {
   if (typeof image === "string") return cleanText(image);
   return cleanText(image?.url || image?.src || image?.publicUrl || image?.imageUrl);
@@ -114,6 +119,13 @@ export function buildNominatimSearchUrl(query, { limit = 1 } = {}) {
   return url;
 }
 
+export function buildNominatimSearchJsonpUrl(query, { callback = "hyroxGeocodeCallback", limit = 1 } = {}) {
+  const url = buildNominatimSearchUrl(query, { limit });
+  url.searchParams.set("format", "json");
+  url.searchParams.set("json_callback", sanitizeJsonpCallback(callback));
+  return url;
+}
+
 export function buildNominatimReverseUrl({ lat, lng } = {}) {
   const url = new URL("/reverse", NOMINATIM_API);
   url.searchParams.set("format", "jsonv2");
@@ -123,12 +135,35 @@ export function buildNominatimReverseUrl({ lat, lng } = {}) {
   return url;
 }
 
+export function buildNominatimReverseJsonpUrl({
+  lat,
+  lng,
+  callback = "hyroxReverseCallback",
+} = {}) {
+  const url = buildNominatimReverseUrl({ lat, lng });
+  url.searchParams.set("format", "json");
+  url.searchParams.set("json_callback", sanitizeJsonpCallback(callback));
+  return url;
+}
+
 export function buildHyrox365MapUrl({ lat, lng, radiusKm = 50, limit = 20 } = {}) {
   const url = new URL(`${HYROX365_API}/gyms/map`);
   if (Number.isFinite(Number(lat))) url.searchParams.set("latitude", String(lat));
   if (Number.isFinite(Number(lng))) url.searchParams.set("longitude", String(lng));
   url.searchParams.set("radiusMeters", String(Math.round((Number(radiusKm) || 50) * 1000)));
   url.searchParams.set("limit", String(clampLimit(limit, 20)));
+  return url;
+}
+
+export function buildHyrox365GymFinderSearchUrl({ origin = {}, label = "", radiusKm = 50, limit = 20 } = {}) {
+  const url = new URL(HYROX365_FINDER_BASE);
+
+  if (Number.isFinite(Number(origin?.lat))) url.searchParams.set("lat", String(origin.lat));
+  if (Number.isFinite(Number(origin?.lng))) url.searchParams.set("lng", String(origin.lng));
+  if (cleanText(label)) url.searchParams.set("label", cleanText(label));
+  url.searchParams.set("radiusKm", String(Number(radiusKm) || 50));
+  url.searchParams.set("limit", String(clampLimit(limit, 20)));
+
   return url;
 }
 
@@ -175,6 +210,19 @@ export function computeDistanceKm(from, to) {
     Math.cos(toRadians(fromLat)) * Math.cos(toRadians(toLat)) * Math.sin(deltaLng / 2) ** 2;
 
   return 2 * EARTH_RADIUS_KM * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function isStaticApiFallbackResponse({ status, contentType = "", body = "" } = {}) {
+  if (Number(status) !== 404) return false;
+
+  const normalizedContentType = cleanText(contentType).toLowerCase();
+  const normalizedBody = cleanText(body).toLowerCase();
+  return (
+    normalizedContentType.includes("text/html") &&
+    (normalizedBody.startsWith("<!doctype html") ||
+      normalizedBody.includes("github pages") ||
+      normalizedBody.includes("page not found"))
+  );
 }
 
 export function normalizeGeocodeFeature(feature) {

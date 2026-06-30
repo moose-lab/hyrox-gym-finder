@@ -364,6 +364,20 @@ a:focus-visible {
   padding: 12px;
 }
 
+.static-fallback-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: #fbfcf8;
+  padding: 16px;
+}
+
+.static-fallback-card p {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .rank {
   display: grid;
   width: 42px;

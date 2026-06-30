@@ -15,6 +15,7 @@ Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
 - Builds city-level tags with second-level district filters from the loaded HYROXCN records.
 - Visualizes results with summary cards, a relative SVG map, and a ranked venue list.
 - Fetches public HYROX365 gym details for top nearby results and shows address, region, coordinates, certification status, gym code, phone, email, website, amenities, opening hours, official HYROX profile, source, and map links.
+- Detects static GitHub Pages deployments without an API proxy, avoids raw `/api/*` 404 HTML errors, and falls back to an official HYROX Finder link for the resolved address.
 - Redacts personal contact fields from included sample data.
 
 ## Run Locally
@@ -27,6 +28,8 @@ npm start
 Open `http://localhost:4173`.
 
 The app has no package dependencies. `npm start` runs a small Node server that serves static files and exposes fixed proxy routes for Nominatim and HYROX365. The proxy uses the system `curl` binary for upstream requests and is needed because the official HYROX365 API allows the official HYROX finder origin but does not allow arbitrary static browser origins.
+
+The GitHub Pages build is static. It can resolve a typed address through a JSONP fallback and open the official HYROX Finder for that precise location, but full in-app HYROX365 result cards require `npm start` locally or a hosted same-origin proxy deployment.
 
 ## Data Notes
 
