@@ -7,7 +7,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23171915'/%3E%3Cpath d='M7 16h18M16 7v18' stroke='%23e0ff34' stroke-width='4'/%3E%3C/svg%3E" />
     <meta
       name="description"
-      content="Find nearby HYROXCN certified gyms from a location, region keyword, or local HYROXCN JSON export."
+      content="Find the nearest HYROXCN certified gyms from your GPS location, city tags, search text, or local HYROXCN JSON export."
     />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
@@ -17,25 +17,37 @@
         <div class="title-row">
           <div>
             <p class="eyebrow">HYROX Scenario Tool</p>
-            <h1 id="app-title">Find nearby HYROX gyms</h1>
+            <h1 id="app-title">Find your nearest HYROX gym</h1>
           </div>
           <a class="source-link" href="https://hyroxcn.com/" target="_blank" rel="noreferrer">HYROXCN</a>
         </div>
 
         <form id="search-form" class="search-form">
           <label>
-            <span>Region, address, or gym name</span>
-            <input id="query" name="query" type="search" value="上海" autocomplete="off" />
+            <span>City, district, address, or gym name</span>
+            <input id="query" name="query" type="search" placeholder="Search after GPS loads, or type a city" autocomplete="off" />
           </label>
+
+          <section class="region-browser" aria-label="City and district filters">
+            <div class="region-heading">
+              <span>City tags</span>
+              <button id="clear-region" type="button" class="link-button" disabled>Clear</button>
+            </div>
+            <div id="city-tags" class="tag-list" aria-label="City filters"></div>
+            <div class="region-heading">
+              <span>District tags</span>
+            </div>
+            <div id="county-tags" class="tag-list" aria-label="District filters"></div>
+          </section>
 
           <div class="coordinate-grid">
             <label>
               <span>Latitude</span>
-              <input id="lat" name="lat" type="number" step="any" value="31.2304" />
+              <input id="lat" name="lat" type="number" step="any" placeholder="GPS fills this" />
             </label>
             <label>
               <span>Longitude</span>
-              <input id="lng" name="lng" type="number" step="any" value="121.4737" />
+              <input id="lng" name="lng" type="number" step="any" placeholder="GPS fills this" />
             </label>
             <label>
               <span>Result limit</span>
@@ -44,8 +56,8 @@
           </div>
 
           <div class="actions">
-            <button type="submit">Search live API</button>
-            <button id="use-location" type="button" class="secondary">Use my location</button>
+            <button id="use-location" type="button">Use my GPS</button>
+            <button type="submit" class="secondary">Search live API</button>
             <label class="file-button">
               Import JSON
               <input id="json-file" type="file" accept="application/json,.json" />
@@ -54,7 +66,7 @@
         </form>
 
         <p id="status" class="status" role="status">
-          Ready. Searches use the public HYROXCN gym endpoint or your imported JSON file.
+          Ready. The default search asks for GPS and ranks nearby HYROXCN certified gyms first.
         </p>
       </section>
 
@@ -83,10 +95,10 @@
     <template id="empty-template">
       <div class="empty-state">
         <h3>No gyms matched this search</h3>
-        <p>Try a broader city or province keyword, or search with latitude and longitude.</p>
+        <p>Allow GPS, choose a city tag, type a broader keyword, or import a HYROXCN JSON export.</p>
       </div>
     </template>
 
-    <script type="module" src="./src/main.mjs?v=20260629-region-search"></script>
+    <script type="module" src="./src/main.mjs?v=20260630-nearby-default"></script>
   </body>
 </html>

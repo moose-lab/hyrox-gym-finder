@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   buildHyroxCnUrl,
+  buildRegionOptions,
   chooseHyroxCnFetchSize,
   computeDistanceKm,
   createUserSearch,
+  describeLocationSearchFailure,
+  findNearbyCertifiedGyms,
   filterGyms,
   normalizeHyroxCnResponse,
   rankGyms,
@@ -131,6 +134,84 @@ test("rankGyms computes distance when API distance is absent", () => {
   assert.equal(ranked[0].id, "near");
   assert.ok(ranked[0].distanceKm < 1);
   assert.ok(ranked[1].distanceKm > 1000);
+});
+
+test("buildRegionOptions groups city tags with second-level county tags", () => {
+  const gyms = [
+    { id: "jing-an", city: "上海市", county: "静安区" },
+    { id: "xu-hui", city: "上海市", county: "徐汇区" },
+    { id: "jing-an-2", city: "上海市", county: "静安区" },
+    { id: "chaoyang", city: "北京市", county: "朝阳区" },
+    { id: "unknown", city: "", county: "碑林区" },
+  ];
+
+  assert.deepEqual(buildRegionOptions(gyms), [
+    {
+      city: "上海市",
+      count: 3,
+      counties: [
+        { county: "静安区", count: 2 },
+        { county: "徐汇区", count: 1 },
+      ],
+    },
+    {
+      city: "北京市",
+      count: 1,
+      counties: [{ county: "朝阳区", count: 1 }],
+    },
+  ]);
+});
+
+test("findNearbyCertifiedGyms defaults to nearest GPS-ranked gyms when no text filter is set", () => {
+  const gyms = [
+    { id: "beijing", name: "Beijing", city: "北京市", county: "朝阳区", lat: 39.9042, lng: 116.4074 },
+    { id: "jing-an", name: "Jing An", city: "上海市", county: "静安区", lat: 31.231, lng: 121.474 },
+    { id: "xuhui", name: "Xuhui", city: "上海市", county: "徐汇区", lat: 31.188, lng: 121.436 },
+  ];
+
+  const results = findNearbyCertifiedGyms(gyms, {
+    origin: { lat: 31.2304, lng: 121.4737 },
+    query: "",
+    city: "",
+    county: "",
+    limit: 2,
+  });
+
+  assert.deepEqual(
+    results.map((gym) => gym.id),
+    ["jing-an", "xuhui"],
+  );
+  assert.ok(results[0].distanceKm < results[1].distanceKm);
+});
+
+test("findNearbyCertifiedGyms applies city and county tag filters before ranking", () => {
+  const gyms = [
+    { id: "jing-an", name: "Jing An", city: "上海市", county: "静安区", lat: 31.231, lng: 121.474 },
+    { id: "xuhui", name: "Xuhui", city: "上海市", county: "徐汇区", lat: 31.188, lng: 121.436 },
+    { id: "beijing", name: "Beijing", city: "北京市", county: "朝阳区", lat: 39.9042, lng: 116.4074 },
+  ];
+
+  const results = findNearbyCertifiedGyms(gyms, {
+    origin: { lat: 31.2304, lng: 121.4737 },
+    city: "上海市",
+    county: "徐汇区",
+  });
+
+  assert.deepEqual(
+    results.map((gym) => gym.id),
+    ["xuhui"],
+  );
+});
+
+test("describeLocationSearchFailure distinguishes GPS failures from API failures", () => {
+  assert.equal(
+    describeLocationSearchFailure(new Error("HYROXCN API returned 500"), { stage: "api" }),
+    "HYROXCN API returned 500. Search by city, enter coordinates, or import a saved HYROXCN JSON export.",
+  );
+  assert.equal(
+    describeLocationSearchFailure(new Error("User denied Geolocation"), { automatic: true, stage: "geolocation" }),
+    "GPS is unavailable or permission was denied. Search a city tag, keyword, or enter coordinates manually.",
+  );
 });
 
 test("computeDistanceKm returns stable haversine distance", () => {

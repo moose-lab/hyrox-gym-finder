@@ -1,11 +1,12 @@
 import {
   buildHyroxCnUrl,
+  buildRegionOptions,
   chooseHyroxCnFetchSize,
   createUserSearch,
-  filterGyms,
+  describeLocationSearchFailure,
+  findNearbyCertifiedGyms,
   normalizeHyroxCnResponse,
-  rankGyms,
-} from "./hyrox.mjs?v=20260629-region-search";
+} from "./hyrox.mjs?v=20260630-nearby-default";
 
 const form = document.querySelector("#search-form");
 const statusNode = document.querySelector("#status");
@@ -16,6 +17,9 @@ const resultCountNode = document.querySelector("#result-count");
 const sourcePillNode = document.querySelector("#source-pill");
 const fileInput = document.querySelector("#json-file");
 const useLocationButton = document.querySelector("#use-location");
+const cityTagsNode = document.querySelector("#city-tags");
+const countyTagsNode = document.querySelector("#county-tags");
+const clearRegionButton = document.querySelector("#clear-region");
 const emptyTemplate = document.querySelector("#empty-template");
 
 const fields = {
@@ -28,14 +32,20 @@ const fields = {
 const state = {
   gyms: [],
   filtered: [],
-  lastSearch: createUserSearch({ label: "Shanghai", query: "上海", lat: 31.2304, lng: 121.4737 }),
+  regionOptions: [],
+  selectedCity: "",
+  selectedCounty: "",
+  lastSearch: createUserSearch({ label: "GPS nearby" }),
   source: "Not loaded",
+  total: 0,
 };
 
 const numberOrNull = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
+
+const cleanText = (value) => String(value ?? "").trim();
 
 const setStatus = (message, tone = "neutral") => {
   statusNode.textContent = message;
@@ -55,6 +65,11 @@ const formatDistance = (km) => {
   return `${km.toFixed(km < 10 ? 1 : 0)} km`;
 };
 
+const formatCoordinates = (gym) => {
+  if (!Number.isFinite(gym.lat) || !Number.isFinite(gym.lng)) return "Coordinates unavailable";
+  return `${gym.lat.toFixed(5)}, ${gym.lng.toFixed(5)}`;
+};
+
 const clampLimit = () => Math.min(500, Math.max(1, Number.parseInt(fields.limit.value, 10) || 50));
 
 const currentOrigin = () => ({
@@ -62,17 +77,30 @@ const currentOrigin = () => ({
   lng: numberOrNull(fields.lng.value),
 });
 
-const currentSearch = () =>
-  createUserSearch({
-    label: fields.query.value || "Coordinate search",
-    query: fields.query.value,
+const hasOrigin = () => {
+  const origin = currentOrigin();
+  return Number.isFinite(origin.lat) && Number.isFinite(origin.lng);
+};
+
+const activeQueryText = () => cleanText(fields.query.value);
+
+const currentSearch = () => {
+  const label = [hasOrigin() ? "GPS nearby" : "", state.selectedCity, state.selectedCounty, activeQueryText()]
+    .filter(Boolean)
+    .join(" / ");
+
+  return createUserSearch({
+    label: label || "HYROXCN search",
+    query: activeQueryText(),
     ...currentOrigin(),
   });
+};
 
 async function fetchLiveGyms() {
   const origin = currentOrigin();
   const limit = clampLimit();
-  const size = chooseHyroxCnFetchSize({ query: fields.query.value, limit });
+  const textOrRegion = [activeQueryText(), state.selectedCity, state.selectedCounty].filter(Boolean).join(" ");
+  const size = textOrRegion ? 500 : chooseHyroxCnFetchSize({ query: "", limit: Math.max(limit, 500) });
   const url = buildHyroxCnUrl({ ...origin, page: 1, size });
   const response = await fetch(url, { mode: "cors", credentials: "omit" });
 
@@ -85,32 +113,51 @@ async function fetchLiveGyms() {
   return { gyms, total: payload?.data?.totalElements ?? gyms.length };
 }
 
-function applySearch({ gyms = state.gyms, source = state.source, total = gyms.length } = {}) {
+function applySearch({ gyms = state.gyms, source = state.source, total = state.total || gyms.length } = {}) {
   state.gyms = gyms;
   state.source = source;
+  state.total = total;
+  state.regionOptions = buildRegionOptions(gyms);
   state.lastSearch = currentSearch();
-
-  const filtered = filterGyms(gyms, state.lastSearch.query);
-  state.filtered = rankGyms(filtered, currentOrigin()).slice(0, clampLimit());
+  state.filtered = findNearbyCertifiedGyms(gyms, {
+    origin: currentOrigin(),
+    query: state.lastSearch.query,
+    city: state.selectedCity,
+    county: state.selectedCounty,
+    limit: clampLimit(),
+  });
 
   render(total);
 }
 
-function render(total = state.gyms.length) {
+async function searchLiveGyms({ statusPrefix = "Loading HYROXCN certified gyms" } = {}) {
+  setStatus(`${statusPrefix}...`, "neutral");
+
+  const { gyms, total } = await fetchLiveGyms();
+  applySearch({ gyms, source: "HYROXCN live API", total });
+
+  const locationText = hasOrigin() ? "nearest to your current GPS position" : "from HYROXCN";
+  setStatus(`Showing ${state.filtered.length} certified gyms ${locationText}.`, "success");
+}
+
+function render(total = state.total || state.gyms.length) {
   const nearest = state.filtered.find((gym) => Number.isFinite(gym.distanceKm));
   const cities = new Set(state.filtered.map((gym) => gym.city).filter(Boolean));
   const withBooking = state.filtered.filter((gym) => gym.hasBooking).length;
+  const originLabel = hasOrigin() ? "GPS ready" : "No GPS";
+  const regionLabel = [state.selectedCity, state.selectedCounty].filter(Boolean).join(" / ") || "All cities";
 
   summaryNode.innerHTML = [
-    summaryCard("Loaded", `${total}`, "HYROXCN records"),
-    summaryCard("Visible", `${state.filtered.length}`, "after filters"),
+    summaryCard("Origin", originLabel, hasOrigin() ? "distance ranking active" : "enter coordinates or allow GPS"),
+    summaryCard("Loaded", `${total}`, "HYROXCN certified records"),
     summaryCard("Nearest", nearest ? formatDistance(nearest.distanceKm) : "None", nearest?.name ?? "No match"),
-    summaryCard("Booking", `${withBooking}`, `${cities.size} cities in view`),
+    summaryCard("Filters", `${state.filtered.length}`, `${regionLabel} / ${cities.size} cities / ${withBooking} booking`),
   ].join("");
 
   resultCountNode.textContent = `${state.filtered.length} results`;
   sourcePillNode.textContent = state.source;
 
+  renderRegionTags();
   renderMap();
   renderResults();
 }
@@ -125,9 +172,67 @@ function summaryCard(label, value, note) {
   `;
 }
 
+function renderRegionTags() {
+  if (state.regionOptions.length === 0) {
+    cityTagsNode.innerHTML = '<span class="tag-empty">Load HYROXCN data to choose city tags.</span>';
+    countyTagsNode.innerHTML = '<span class="tag-empty">Choose a city to reveal district tags.</span>';
+    clearRegionButton.disabled = true;
+    return;
+  }
+
+  clearRegionButton.disabled = !state.selectedCity && !state.selectedCounty;
+
+  cityTagsNode.innerHTML = state.regionOptions
+    .slice(0, 24)
+    .map((option) =>
+      tagButton({
+        label: `${option.city} ${option.count}`,
+        value: option.city,
+        type: "city",
+        pressed: option.city === state.selectedCity,
+      }),
+    )
+    .join("");
+
+  const selectedCity = state.regionOptions.find((option) => option.city === state.selectedCity);
+  if (!selectedCity) {
+    countyTagsNode.innerHTML = '<span class="tag-empty">Select a city tag for district-level filters.</span>';
+    return;
+  }
+
+  countyTagsNode.innerHTML =
+    selectedCity.counties.length === 0
+      ? '<span class="tag-empty">This city has no district tags in the loaded data.</span>'
+      : selectedCity.counties
+          .slice(0, 24)
+          .map((option) =>
+            tagButton({
+              label: `${option.county} ${option.count}`,
+              value: option.county,
+              type: "county",
+              pressed: option.county === state.selectedCounty,
+            }),
+          )
+          .join("");
+}
+
+function tagButton({ label, value, type, pressed }) {
+  return `
+    <button
+      type="button"
+      class="region-tag${pressed ? " is-active" : ""}"
+      data-region-type="${escapeHtml(type)}"
+      data-region-value="${escapeHtml(value)}"
+      aria-pressed="${pressed ? "true" : "false"}"
+    >
+      ${escapeHtml(label)}
+    </button>
+  `;
+}
+
 function renderMap() {
   if (state.filtered.length === 0) {
-    mapNode.innerHTML = '<div class="empty-map">Search results will appear here.</div>';
+    mapNode.innerHTML = '<div class="empty-map">Allow GPS or search a city to show nearby HYROX gyms.</div>';
     return;
   }
 
@@ -137,8 +242,12 @@ function renderMap() {
     return;
   }
 
-  const lats = points.map((gym) => gym.lat);
-  const lngs = points.map((gym) => gym.lng);
+  const origin = currentOrigin();
+  const originForBounds =
+    Number.isFinite(origin.lat) && Number.isFinite(origin.lng) ? { lat: origin.lat, lng: origin.lng } : null;
+  const boundsPoints = originForBounds ? [...points, originForBounds] : points;
+  const lats = boundsPoints.map((gym) => gym.lat);
+  const lngs = boundsPoints.map((gym) => gym.lng);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs);
@@ -156,12 +265,6 @@ function renderMap() {
     };
   };
 
-  const origin = currentOrigin();
-  const originPoint =
-    Number.isFinite(origin.lat) && Number.isFinite(origin.lng)
-      ? project({ lat: origin.lat, lng: origin.lng })
-      : null;
-
   const circles = points
     .map((gym, index) => {
       const { x, y } = project(gym);
@@ -170,12 +273,12 @@ function renderMap() {
     })
     .join("");
 
-  const originMarkup = originPoint
-    ? `<circle cx="${originPoint.x}" cy="${originPoint.y}" r="9" class="origin-dot"><title>Your search origin</title></circle>`
+  const originMarkup = originForBounds
+    ? `<circle cx="${project(originForBounds).x}" cy="${project(originForBounds).y}" r="9" class="origin-dot"><title>Your GPS position</title></circle>`
     : "";
 
   mapNode.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative map of matched HYROX gyms">
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative map of matched HYROX gyms and your GPS origin">
       <rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="0" class="map-bg"></rect>
       <path d="M ${pad} ${height / 2} H ${width - pad} M ${width / 2} ${pad} V ${height - pad}" class="map-grid"></path>
       ${circles}
@@ -198,6 +301,7 @@ function resultCard(gym, index) {
     Number.isFinite(gym.lat) && Number.isFinite(gym.lng)
       ? `https://www.openstreetmap.org/?mlat=${gym.lat}&mlon=${gym.lng}#map=16/${gym.lat}/${gym.lng}`
       : "";
+  const region = [gym.province, gym.city, gym.county].filter(Boolean).join(" / ") || "Region unavailable";
 
   return `
     <article class="result-card">
@@ -207,10 +311,28 @@ function resultCard(gym, index) {
           <h3>${escapeHtml(gym.name)}</h3>
           <span>${escapeHtml(formatDistance(gym.distanceKm))}</span>
         </div>
-        <p>${escapeHtml([gym.city, gym.county].filter(Boolean).join(" · "))}</p>
-        <p>${escapeHtml(gym.address)}</p>
+        <p class="result-region">${escapeHtml(region)}</p>
+        <p>${escapeHtml(gym.address || "Address unavailable")}</p>
+        <dl class="detail-grid">
+          <div>
+            <dt>Certification</dt>
+            <dd>${escapeHtml(gym.status || "VALID")}</dd>
+          </div>
+          <div>
+            <dt>Gym code</dt>
+            <dd>${escapeHtml(gym.code || "Not listed")}</dd>
+          </div>
+          <div>
+            <dt>Coordinates</dt>
+            <dd>${escapeHtml(formatCoordinates(gym))}</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>${escapeHtml(gym.source || "HYROXCN")}</dd>
+          </div>
+        </dl>
         <div class="chips">
-          <span>Certified ${escapeHtml(gym.status)}</span>
+          <span>HYROX certified</span>
           ${gym.hasFitnessTest ? "<span>Fitness test</span>" : ""}
           ${gym.hasBooking ? "<span>Booking path</span>" : ""}
           ${gym.imageCount ? `<span>${gym.imageCount} images</span>` : ""}
@@ -225,18 +347,77 @@ function resultCard(gym, index) {
   `;
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  setStatus("Loading HYROXCN certified gyms...", "neutral");
+function getBrowserPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("This browser does not support GPS geolocation"));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, maximumAge: 30000 });
+  });
+}
+
+async function locateAndSearch({ automatic = false } = {}) {
+  setStatus(automatic ? "Requesting GPS so the default search can rank nearby gyms..." : "Requesting GPS...", "neutral");
+
+  let position;
+  try {
+    position = await getBrowserPosition();
+  } catch (error) {
+    setStatus(describeLocationSearchFailure(error, { automatic, stage: "geolocation" }), "error");
+    return;
+  }
+
+  fields.lat.value = position.coords.latitude.toFixed(6);
+  fields.lng.value = position.coords.longitude.toFixed(6);
 
   try {
-    const { gyms, total } = await fetchLiveGyms();
-    applySearch({ gyms, source: "HYROXCN live API", total });
-    setStatus(`Loaded ${gyms.length} live HYROXCN gyms.`, "success");
+    await searchLiveGyms({ statusPrefix: "GPS found. Loading nearest HYROXCN gyms" });
+  } catch (error) {
+    setStatus(describeLocationSearchFailure(error, { automatic, stage: "api" }), "error");
+  }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    await searchLiveGyms();
   } catch (error) {
     applySearch();
     setStatus(`${error.message}. You can still import a saved HYROXCN JSON export.`, "error");
   }
+});
+
+fields.query.addEventListener("input", () => {
+  if (state.gyms.length === 0) return;
+  applySearch();
+});
+
+cityTagsNode.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-region-type='city']");
+  if (!button) return;
+
+  const city = button.dataset.regionValue;
+  state.selectedCity = state.selectedCity === city ? "" : city;
+  state.selectedCounty = "";
+  applySearch();
+});
+
+countyTagsNode.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-region-type='county']");
+  if (!button) return;
+
+  const county = button.dataset.regionValue;
+  state.selectedCounty = state.selectedCounty === county ? "" : county;
+  applySearch();
+});
+
+clearRegionButton.addEventListener("click", () => {
+  state.selectedCity = "";
+  state.selectedCounty = "";
+  applySearch();
 });
 
 fileInput.addEventListener("change", async () => {
@@ -246,6 +427,8 @@ fileInput.addEventListener("change", async () => {
   try {
     const payload = JSON.parse(await file.text());
     const gyms = normalizeHyroxCnResponse(payload);
+    state.selectedCity = "";
+    state.selectedCounty = "";
     fields.query.value = "";
     applySearch({ gyms, source: "Imported JSON", total: payload?.data?.totalElements ?? gyms.length });
     setStatus(`Imported ${gyms.length} valid gyms from ${file.name}.`, "success");
@@ -257,23 +440,8 @@ fileInput.addEventListener("change", async () => {
 });
 
 useLocationButton.addEventListener("click", () => {
-  if (!navigator.geolocation) {
-    setStatus("This browser does not support geolocation. Enter coordinates manually.", "error");
-    return;
-  }
-
-  setStatus("Requesting browser location...", "neutral");
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      fields.lat.value = position.coords.latitude.toFixed(6);
-      fields.lng.value = position.coords.longitude.toFixed(6);
-      setStatus("Location filled. Search the live API when ready.", "success");
-    },
-    () => {
-      setStatus("Location permission was denied or unavailable. Enter coordinates manually.", "error");
-    },
-    { timeout: 10000, maximumAge: 30000 },
-  );
+  locateAndSearch();
 });
 
 render(0);
+locateAndSearch({ automatic: true });

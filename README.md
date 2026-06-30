@@ -1,16 +1,19 @@
 # HYROX Gym Finder
 
-A small browser tool for finding nearby HYROXCN certified gyms from a location, region keyword, or local HYROXCN JSON export.
+A small standalone browser tool for finding nearby HYROXCN certified gyms from your GPS position, city/district tags, region keywords, coordinates, or a local HYROXCN JSON export.
 
 Live app: <https://moose-lab.github.io/hyrox-gym-finder/>
 
 ## What It Does
 
 - Calls the public HYROXCN gym endpoint: `https://api.hyroxcn.com/appapi/fit/gym/query`.
-- Accepts latitude/longitude, browser geolocation, a region or address keyword, or an imported JSON export.
+- Requests browser GPS by default and ranks certified gyms by nearest distance.
+- Accepts latitude/longitude, city and district tags, a region or address keyword, or an imported JSON export.
 - Normalizes certified `VALID` gyms into a compact result model.
 - Ranks gyms by API distance or local Haversine distance.
+- Builds city-level tags with second-level district filters from the loaded HYROXCN records.
 - Visualizes results with summary cards, a relative SVG map, and a ranked venue list.
+- Shows concrete gym details such as address, region, coordinates, certification status, gym code, source, booking path availability, and map links.
 - Redacts personal contact fields from included sample data.
 
 ## Run Locally

@@ -118,6 +118,39 @@ export function filterGyms(gyms, query) {
   );
 }
 
+const compareCountThenName = (a, b, field) => b.count - a.count || a[field].localeCompare(b[field]);
+
+export function buildRegionOptions(gyms) {
+  const cities = new Map();
+
+  for (const gym of gyms) {
+    const city = cleanText(gym.city);
+    if (!city) continue;
+
+    if (!cities.has(city)) {
+      cities.set(city, { city, count: 0, counties: new Map() });
+    }
+
+    const entry = cities.get(city);
+    const county = cleanText(gym.county);
+    entry.count += 1;
+
+    if (county) {
+      entry.counties.set(county, (entry.counties.get(county) ?? 0) + 1);
+    }
+  }
+
+  return [...cities.values()]
+    .map((entry) => ({
+      city: entry.city,
+      count: entry.count,
+      counties: [...entry.counties.entries()]
+        .map(([county, count]) => ({ county, count }))
+        .sort((a, b) => compareCountThenName(a, b, "county")),
+    }))
+    .sort((a, b) => compareCountThenName(a, b, "city"));
+}
+
 export function rankGyms(gyms, origin) {
   return gyms
     .map((gym) => {
@@ -135,6 +168,35 @@ export function rankGyms(gyms, origin) {
       const bDistance = b.distanceKm ?? Number.POSITIVE_INFINITY;
       return aDistance - bDistance || a.name.localeCompare(b.name);
     });
+}
+
+export function findNearbyCertifiedGyms(
+  gyms,
+  { origin = {}, query = "", city = "", county = "", limit = 50 } = {},
+) {
+  const selectedCity = cleanText(city);
+  const selectedCounty = cleanText(county);
+
+  const scoped = gyms.filter((gym) => {
+    const status = cleanText(gym.status);
+    if (status && status !== "VALID") return false;
+    if (selectedCity && cleanText(gym.city) !== selectedCity) return false;
+    if (selectedCounty && cleanText(gym.county) !== selectedCounty) return false;
+    return true;
+  });
+
+  return rankGyms(filterGyms(scoped, query), origin).slice(0, clampSize(limit));
+}
+
+export function describeLocationSearchFailure(error, { automatic = false, stage = "geolocation" } = {}) {
+  if (stage === "api") {
+    const message = cleanText(error?.message) || "Could not load HYROXCN gyms";
+    return `${message}. Search by city, enter coordinates, or import a saved HYROXCN JSON export.`;
+  }
+
+  return automatic
+    ? "GPS is unavailable or permission was denied. Search a city tag, keyword, or enter coordinates manually."
+    : "GPS permission was denied or unavailable. Enter coordinates manually or search by city.";
 }
 
 export function createUserSearch({ label = "Custom search", query = "", lat = null, lng = null } = {}) {
